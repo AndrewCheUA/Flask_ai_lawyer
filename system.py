@@ -5,6 +5,8 @@ from flask_jwt_extended import JWTManager
 from flask_bcrypt import Bcrypt
 from flask_mail import Message
 from flask_mail import Mail
+from flask_socketio import SocketIO
+
 
 import os
 import secrets

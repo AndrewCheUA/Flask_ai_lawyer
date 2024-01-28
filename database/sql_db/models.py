@@ -8,7 +8,7 @@ import jwt
 from time import time
 
 from system import app
-from database.connect import session
+from database.sql_db.connect import session_db
 
 
 Base = sqlalchemy.orm.declarative_base()
@@ -36,7 +36,7 @@ class User(Base, UserMixin):
             user_id = jwt.decode(token, app.config['SECRET_KEY'], algorithms=app.config['ALGORITHM'])['reset_password']
         except Exception as E:
             return print(E)
-        return session.get(User, user_id)
+        return session_db.get(User, user_id)
 
 
 

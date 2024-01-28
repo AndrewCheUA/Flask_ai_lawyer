@@ -11,7 +11,7 @@ SQLALCHEMY_DATABASE_URL = os.getenv('SQLALCHEMY_DATABASE_URL')
 
 engine = create_engine(SQLALCHEMY_DATABASE_URL, echo=True, pool_size=15)
 Session = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-session = Session()
+session_db = Session()
 
 
 # Dependency

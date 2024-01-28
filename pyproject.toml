@@ -19,6 +19,13 @@ flask-wtf = "^1.2.1"
 alembic = "^1.13.1"
 psycopg2 = "^2.9.9"
 email-validator = "^2.1.0.post1"
+flask-socketio = "^5.3.6"
+transformers = "^4.37.1"
+pymongo = "^4.6.1"
+spacy = "^3.7.2"
+langchain = "^0.1.4"
+gensim = "^4.3.2"
+nltk = "^3.8.1"
 
 
 [build-system]
