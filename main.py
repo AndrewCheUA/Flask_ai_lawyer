@@ -1,30 +1,44 @@
-from flask import render_template, url_for, flash, redirect, request
+from flask import render_template, url_for, flash, redirect, request, session
 from flask_login import login_user, current_user, logout_user, login_required
 from forms import RegistrationForm, LoginForm, UpdateAccountForm, PostForm, RequestResetForm, ResetPasswordForm, \
     ConfirmEmailForm
 from system import app, login_manager, bcrypt, save_picture, pagination_range, send_reset_email, send_confirm_email
 
-from database.models import User, Post
-from database.connect import session
+from flask_socketio import SocketIO, join_room, leave_room, send
 
+from database.sql_db.models import User, Post
+from database.sql_db.connect import session_db
+
+socketio = SocketIO(app)
+rooms = {}
 
 @login_manager.user_loader
 def load_user(user_id):
-    return session.query(User).filter_by(id=user_id).first()
+    return session_db.query(User).filter_by(id=user_id).first()
 
 
-@app.route("/")
-@app.route("/home")
+@app.route("/", methods=["POST", "GET"])
+@app.route("/home", methods=["POST", "GET"])
 def home():
     page = request.args.get('page', 1, type=int)
     per_page = 5
     offset = (page - 1) * per_page
 
-    total_posts = session.query(Post).count()
-    posts = session.query(Post).order_by(Post.date_posted.asc()).offset(offset).limit(per_page).all()
+    total_posts = session_db.query(Post).count()
+    posts = session_db.query(Post).order_by(Post.date_posted.asc()).offset(offset).limit(per_page).all()
     total_pages = (total_posts // per_page) + (1 if total_posts % per_page else 0)
     pagination = pagination_range(page, total_pages)
 
+    if request.method == "POST":
+        name = current_user.username
+
+        room = "AAAA"
+        rooms[room] = {"members": 0, "messages": []}
+
+
+        session["room"] = room
+        session["name"] = name
+        return redirect(url_for("room"))
     return render_template('home.html', posts=posts, page=page, total_pages=total_pages, pagination_range=pagination)
 
 
@@ -41,11 +55,11 @@ def register():
     if form.validate_on_submit():
         hashed_password = bcrypt.generate_password_hash(form.password.data).decode('utf-8')
         user = User(username=form.username.data, email=form.email.data, password=hashed_password)
-        session.add(user)
-        session.commit()
+        session_db.add(user)
+        session_db.commit()
         send_confirm_email(user)
-        flash('Your account has been created! Please, confirm your email.', 'success')
-        return redirect(url_for('login'))
+        flash('Please check your email address for a confirmation link.', 'success')
+        return redirect(url_for('home'))
     return render_template('register.html', title='Register', form=form)
 
 
@@ -56,7 +70,7 @@ def login():
     form = LoginForm()
 
     if form.validate_on_submit():
-        user = session.query(User).filter_by(email=form.email.data).first()
+        user = session_db.query(User).filter_by(email=form.email.data).first()
 
         if user and bcrypt.check_password_hash(user.password, form.password.data):
             login_user(user, remember=form.remember.data)
@@ -88,14 +102,14 @@ def account():
         if form.picture.data:
             picture_file = save_picture(form.picture.data)
             current_user.image_file = picture_file
-        user = session.query(User).filter_by(username=current_user.username).first()
+        user = session_db.query(User).filter_by(username=current_user.username).first()
         user.username = form.username.data
         user.email = form.email.data
         if previous_email != form.email.data:
             user.is_active = False
             send_confirm_email(user)
 
-        session.commit()
+        session_db.commit()
 
         flash('Your account has been updated!', 'success')
         logout_user()
@@ -114,8 +128,8 @@ def new_post():
     form = PostForm()
     if form.validate_on_submit():
         post = Post(title=form.title.data, content=form.content.data, user_id=current_user.id)
-        session.add(post)
-        session.commit()
+        session_db.add(post)
+        session_db.commit()
         flash('Your post has been posted!', 'success')
         return redirect(url_for('home'))
     return render_template('create_post.html', title='New post', form=form, legend='New Post')
@@ -123,15 +137,14 @@ def new_post():
 
 @app.route("/post/<int:post_id>")
 def post(post_id):
-    # post = session.query(Post).filter_by(id=post_id).first()
-    post = session.get(Post, post_id)
+    post = session_db.get(Post, post_id)
     return render_template('post.html', title='New post', post=post)
 
 
 @app.route("/post/<int:post_id>/update", methods=['GET', 'POST'])
 @login_required
 def update_post(post_id):
-    post = session.query(Post).filter_by(id=post_id).first()
+    post = session_db.get(Post, post_id)
     if post.user != current_user:
         flash('You dont have the permission to edit others posts!', 'danger')
         return redirect(url_for('home'))
@@ -139,7 +152,7 @@ def update_post(post_id):
     if form.validate_on_submit():
         post.title = form.title.data
         post.content = form.content.data
-        session.commit()
+        session_db.commit()
         flash('Your post has been updated!', 'success')
         return redirect(url_for('post', post_id=post.id))
     elif request.method == 'GET':
@@ -151,12 +164,12 @@ def update_post(post_id):
 @app.route("/post/<int:post_id>/delete", methods=['POST'])
 @login_required
 def delete_post(post_id):
-    post = session.query(Post).filter_by(id=post_id).first()
+    post = session_db.get(Post, post_id)
     if post.user != current_user:
         flash('You dont have the permission to delete others posts!', 'danger')
         return redirect(url_for('home'))
-    session.delete(post)
-    session.commit()
+    session_db.delete(post)
+    session_db.commit()
     flash('Your post has been deleted!', 'success')
     return redirect(url_for('home'))
 
@@ -167,13 +180,13 @@ def user_posts(username):
     per_page = 5
     offset = (page - 1) * per_page
 
-    total_posts = session.query(Post).join(User).filter(User.username == username).count()
-    posts = session.query(Post).join(User).filter(User.username == username).order_by(Post.date_posted.asc()).offset(
+    total_posts = session_db.query(Post).join(User).filter(User.username == username).count()
+    posts = session_db.query(Post).join(User).filter(User.username == username).order_by(Post.date_posted.asc()).offset(
         offset).limit(per_page).all()
     total_pages = (total_posts // per_page) + (1 if total_posts % per_page else 0)
     pagination = pagination_range(page, total_pages)
 
-    user = session.query(User).filter_by(username=username).first()
+    user = session_db.query(User).filter_by(username=username).first()
 
     return render_template('user_posts.html', posts=posts, page=page, total_pages=total_pages, user=user,
                            pagination_range=pagination, total_posts=total_posts)
@@ -185,7 +198,7 @@ def reset_request():
         return redirect(url_for('home'))
     form = RequestResetForm()
     if form.validate_on_submit():
-        user = session.query(User).filter_by(email=form.email.data).first()
+        user = session_db.query(User).filter_by(email=form.email.data).first()
         send_reset_email(user)
         flash('An email has been sent with instructions to reset your password.', 'info')
         return redirect(url_for('home'))
@@ -204,7 +217,7 @@ def reset_token(token):
     if form.validate_on_submit():
         hashed_password = bcrypt.generate_password_hash(form.password.data).decode('utf-8')
         user.password = hashed_password
-        session.commit()
+        session_db.commit()
         flash('Your password has been updated! You are now able to log in', 'success')
         return redirect(url_for('login'))
     return render_template('reset_token.html', title='Reset Password', form=form)
@@ -224,13 +237,68 @@ def confirm_email(token):
 
     if form.validate_on_submit():
         user.is_active = True
-        session.commit()
+        session_db.commit()
         flash('Your Email is confirmed.', 'info')
         return redirect(url_for('login'))
     image_file = url_for('static', filename='profile_pics/' + user.image_file)
     return render_template('confirm_email.html', title='Confirm Email', form=form, user=user, image_file=image_file)
 
 
+@app.route("/room")
+def room():
+    room = session.get("room")
+    if room is None or session.get("name") is None or room not in rooms:
+        return redirect(url_for("home"))
+
+    return render_template("chat/room.html", code=room, messages=rooms[room]["messages"])
+
+
+@socketio.on("connect")
+def connect(auth):
+    room = session.get("room")
+    name = session.get("name")
+    if not room or not name:
+        return
+    if room not in rooms:
+        leave_room(room)
+        return
+
+    join_room(room)
+    send({"name": name, "message": "has entered the room"}, to=room)
+    rooms[room]["members"] += 1
+    print(f"{name} joined room {room}")
+
+
+@socketio.on("disconnect")
+def disconnect():
+    room = session.get("room")
+    name = session.get("name")
+    leave_room(room)
+
+    if room in rooms:
+        rooms[room]["members"] -= 1
+        if rooms[room]["members"] <= 0:
+            del rooms[room]
+
+    send({"name": name, "message": "has left the room"}, to=room)
+    print(f"{name} has left the room {room}")
+
+
+@socketio.on("message")
+def message(data):
+    room = session.get("room")
+    if room not in rooms:
+        return
+
+    content = {
+        "name": session.get("name"),
+        "message": data["data"]
+    }
+    send(content, to=room)
+    rooms[room]["messages"].append(content)
+    print(f"{session.get('name')} said: {data['data']}")
+
+
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
-    app.run(debug=True)
+    socketio.run(app, debug=True, allow_unsafe_werkzeug=True)

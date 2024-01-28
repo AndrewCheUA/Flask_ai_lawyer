@@ -3,3 +3,6 @@ config.ini
 .env
 __pycache__/
 alembic/
+temp_main.py
+nlp_test2.py
+nltk_test.py

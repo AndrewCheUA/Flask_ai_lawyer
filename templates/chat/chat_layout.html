@@ -15,6 +15,11 @@
     {% else %}
         <title>Flask Blog</title>
     {% endif %}
+    <script
+      src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"
+      integrity="sha512-q/dWJ3kcmjBLU4Qc47E4A9kTB4m3wuTY7vkFJDTZKjTs8jhyGQnaUrxa0Ytd0ssMZhbNua9hE+E7Qv1j+DyZwA=="
+      crossorigin="anonymous"
+    ></script>
 </head>
 <body>
     <header class="site-header">
@@ -64,13 +69,6 @@
             <p class='text-muted'>You can put any information here you'd like.
               <ul class="list-group">
                 <li class="list-group-item list-group-item-light">Latest Posts</li>
-                <li class="list-group-item list-group-item-light">Announcements</li>
-                <li class="list-group-item list-group-item-light">Calendars</li>
-                {% if current_user.is_authenticated %}
-                    <form method="post" class="buttons">
-                        <button type="submit" name="create" class="create-btn">Chat with AI</button>
-                    </form>
-                {% endif %}
               </ul>
             </p>
           </div>
